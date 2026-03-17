@@ -1,10 +1,10 @@
 import os
 from app import app, db, login_manager
-from flask import render_template, request, redirect, url_for, flash, session, abort
+from flask import render_template, request, redirect, url_for, flash, session, abort, send_from_directory
 from flask_login import login_user, logout_user, current_user, login_required
 from werkzeug.utils import secure_filename
 from app.models import UserProfile
-from app.forms import LoginForm
+from app.forms import LoginForm, UploadForm
 from werkzeug.security import check_password_hash
 
 
@@ -25,18 +25,37 @@ def about():
 
 
 @app.route('/upload', methods=['POST', 'GET'])
+@login_required
 def upload():
     # Instantiate your form class
+    form = UploadForm()
+
+    print("Form errors:", form.errors)
+    print("Form validate:", form.validate_on_submit())
 
     # Validate file upload on submit
     if form.validate_on_submit():
         # Get file data and save to your uploads folder
+        file = form.file.data
+        filename = secure_filename(file.filename)
+        upload_path = os.path.join(os.getcwd(), app.config['UPLOAD_FOLDER'], filename)
+        print("Saving to:", upload_path)
+        file.save(upload_path)
 
         flash('File Saved', 'success')
-        return redirect(url_for('home')) # Update this to redirect the user to a route that displays all uploaded image files
+        return redirect(url_for('files')) # Update this to redirect the user to a route that displays all uploaded image files
 
-    return render_template('upload.html')
+    return render_template('upload.html', form=form)
 
+@app.route('/uploads/<filename>')
+def get_image(filename):
+    return send_from_directory(os.path.join(os.getcwd(), app.config['UPLOAD_FOLDER']), filename)
+
+@app.route('/files')
+@login_required
+def files():
+    images = get_uploaded_images()
+    return render_template('files.html', images=images)
 
 @app.route('/login', methods=['POST', 'GET'])
 def login():
@@ -58,18 +77,14 @@ def login():
         else:
             flash('Invalid username or password.', 'danger')
             return redirect(url_for("login"))
-        return render_template("login.html", form=form)
-        # Using your model, query database for a user based on the username
-        # and password submitted. Remember you need to compare the password hash.
-        # You will need to import the appropriate function to do so.
-        # Then store the result of that query to a `user` variable so it can be
-        # passed to the login_user() method below.
-
-        # Gets user id, load into session
-
-        # Remember to flash a message to the user
-        return redirect(url_for("home"))  # The user should be redirected to the upload form instead
-    return render_template("login.html", form=form)
+    return render_template("login.html", form=form)    
+    
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    flash('Logged out successfully.', 'success')
+    return redirect(url_for('home'))
 
 # user_loader callback. This callback is used to reload the user object from
 # the user ID stored in the session
@@ -80,6 +95,15 @@ def load_user(id):
 ###
 # The functions below should be applicable to all Flask apps.
 ###
+
+def get_uploaded_images():
+    images = []
+    upload_folder = os.path.join(os.getcwd(), app.config['UPLOAD_FOLDER'])
+    for subdir, dirs, files in os.walk(upload_folder):
+        for file in files:
+            if file.endswith(('.jpg', '.png', '.gif')):
+                images.append(file)
+    return images
 
 # Flash errors from the form if validation fails
 def flash_errors(form):
